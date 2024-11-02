@@ -1,0 +1,484 @@
+---
+title: "final_project"
+date: "2023-03-27"
+output: 
+  flexdashboard::flex_dashboard:
+    storyboard: true
+---
+
+```{r setup, include=FALSE}
+library(flexdashboard)
+library(tidyverse)
+library(knitr)
+library(stringr)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(lubridate)
+library(dplyr)
+library(readxl)
+library(janitor)
+library(ggplot2)
+library(ggrepel)
+library(readr)
+library(scales)
+library(patchwork)
+library(tibble)
+library(tictoc)
+library(benford.analysis)
+library(data.table) 
+```
+
+### Introduction
+
+
+***
+### Electricity supply and consumption change over time in three cities (Year) part I
+```{r echo=FALSE, fig.height=8, fig.width=12, warning=FALSE}
+getDemond <- function(filename){
+  temp <- read_csv(filename,skip = 3, col_names = TRUE,show_col_types = FALSE) %>%
+  clean_names()
+  return(temp)
+}
+
+demand_data <- tibble()
+for (i in 2019:2023)
+{
+filename = paste("PUB_DemandZonal_",i,".csv",sep = "")
+demand_data <- demand_data %>% bind_rows(getDemond(filename) %>% select(date,hour,ottawa,toronto,niagara)) %>%
+  mutate(month_year = format(as.Date(date), "%Y-%m"))
+}
+demand_month <- demand_data %>% select(-date,-hour) %>%
+  pivot_longer(
+    -month_year,
+    names_to = "city", 
+    values_to = "volumn"
+    )
+
+
+demand_month <- aggregate(demand_month$volumn, by=list(demand_month$month_year,demand_month$city),sum) %>% 
+ rename(Time=Group.1,city=Group.2,demand = x) 
+
+
+demand_month %>% mutate(season=case_when(str_sub(Time,-2) %in% c("03","04","05") ~ "Spring",
+                                         str_sub(Time,-2) %in% c("06","07","08") ~ "Summer",
+                                         str_sub(Time,-2) %in% c("09","10","11") ~ "Autumn",
+                                         str_sub(Time,-2) %in% c("12","01","02") ~ "Winter",
+                        TRUE ~ "OTHER")) %>%
+  ggplot(aes( x = Time, y = demand, colour = city))+
+  geom_line(aes(size=2,color=city,group=city),show.legend = FALSE) +
+  geom_point(aes(size=2)) +
+  theme_minimal() +
+  geom_label_repel(aes(label = season), fontface = "bold") +
+    labs(
+    x = 'Period (year)',
+    y = 'power demand',
+    colour = 'city'
+  ) +
+  theme(axis.text.x = element_text(angle=90,hjust=0.5, vjust=0.5))
+```
+
+***
+
+### Electricity supply and consumption change over time in three cities (Year) part II
+```{r echo=FALSE, fig.height=6, fig.width=10, warning=FALSE}
+
+getCapacity <- function(filename){
+  test <- read.table(filename,skip = 3, header=TRUE,sep=",",row.names = NULL) %>%
+  clean_names() 
+  colnames(test) <- colnames(test)[2:ncol(test)] #cite 2
+  test <- test[1:(ncol(test)-1)] %>%
+  filter(measurement=="Output") %>%
+  select(-generator,-fuel_type,-measurement) %>%
+  mutate(month_year = format(as.Date(delivery_date), "%Y-%m")) %>%
+  replace(is.na(.), 0) %>%
+  pivot_longer(
+    cols= starts_with("Hour"),
+    names_to = "hours", 
+    values_to = "volumn"
+    )
+  #test <- aggregate(test$volumn, by=list(test$month_year,test$hours),sum) %>% 
+  #rename(Time=Group.1,hour=Group.2,capacity = x)
+  return(test)
+}
+
+capa_data <- tibble()
+clist <- c("01","02","03","04","05","06","07","08","09","10","11","12")
+
+for (i in 2019:2023)
+{
+  for(j in clist)
+{
+filename = paste("PUB_GenOutputCapabilityMonth_",i,j,".csv",sep = "")
+if (file.exists(filename))
+capa_data <- capa_data %>% bind_rows(getCapacity(filename))
+}
+}
+
+capa_data_old <- read_excel("GOC-2019-Jan-April.xlsx",col_names = TRUE) %>%
+  clean_names() %>%
+  select(date,hour,total) %>%
+  mutate(month_year = format(as.Date(date), "%Y-%m")) %>%
+  mutate(hours = paste("hour_",hour,sep="")) %>%
+  mutate(dates = as.character(date)) %>%
+  select (dates,month_year,hours,total) %>%
+  rename(volumn=total,delivery_date=dates)
+
+#capa_data_old <- aggregate(capa_data_old$total, by=list(capa_data_old$month_year,capa_data_old$hours),sum) %>%
+#rename(Time=Group.1,hour=Group.2,capacity = x)
+
+capa_data <- capa_data %>% bind_rows(capa_data_old)
+
+
+
+capa_data_month <- capa_data %>%
+  select(month_year,hours,volumn) %>%
+  #aggregate(capa_data$volumn, by=list(capa_data$month_year,capa_data$hours),sum) %>% 
+  group_by(month_year,hours) %>%
+  summarise(capacity = sum(volumn)) %>%
+  rename(Time=month_year,hour=hours)
+
+capa_month <- capa_data_month %>% select(Time,capacity) %>% 
+  group_by(Time) %>% 
+  summarise(volumn=sum(capacity),.groups = 'drop')
+
+capa_color<-"#69b3a2"
+capa_month %>% 
+ggplot(aes( x = Time, y = volumn))+
+  geom_point() +
+  geom_line(aes(size=2,group=1,colour="Output"))+
+  scale_color_manual(values = c(capa_color))+
+  theme_minimal() +
+    labs(
+    x = 'Period (year)',
+    y = 'power output'
+  ) +
+  theme(axis.text.x = element_text(angle=90,hjust=0.5, vjust=0.5))
+```
+
+***
+sss
+
+### Electricity supply and consumption change over time in three cities (Year) part III
+```{r echo=FALSE, fig.height=6, fig.width=10, warning=FALSE}
+demand_month2 <- demand_month %>%
+  select(Time,demand) %>%
+  group_by(Time) %>%
+  summarise(volumn=sum(demand),.groups = 'drop')
+
+df1 <- demand_month2 %>% 
+  left_join(capa_month, by = c("Time"="Time")) %>% 
+  rename(demand=volumn.x,capacity=volumn.y)
+
+
+df1 %>% 
+ggplot(aes( x = Time))+
+  geom_line(aes(y=demand,group=1,color="demand"))+
+  geom_line(aes(y=capacity/2,group=1,color="output"))+
+  scale_y_continuous(
+    name="demand",
+    sec.axis = sec_axis(trans = ~.*2,name="output")
+  )+
+  labs(x="Period(year)") +
+  scale_color_manual(values = c("darkgreen", "coral3")) +
+  theme(axis.text.x = element_text(angle=90,hjust=0.5, vjust=0.5),
+        axis.title.y = element_text(color = "darkgreen"),
+    axis.title.y.right = element_text(color = "coral3")
+  )
+
+```
+
+***
+aaa
+
+### Electricity supply and consumption change over time in three cities (Hour) partI
+
+```{r, warning = FALSE, message = FALSE, fig.height=6,fig.width=10}
+demand_hour <- demand_data %>% select(-month_year,-date) %>%
+  pivot_longer(
+    -hour,
+    names_to = "city", 
+    values_to = "volumn"
+    )
+
+demand_hour <- aggregate(demand_hour$volumn, by=list(demand_hour$hour,demand_hour$city),mean) %>% 
+ rename(Hour=Group.1,city=Group.2,demand = x) %>%
+  mutate(hours=as.character(Hour))
+
+mean <- demand_hour%>% group_by(city)%>%summarise(mean_val=mean(demand))
+
+demand_hour %>% 
+  ggplot(aes( x = reorder(hours,Hour),y = demand, colour = city,group=city))+
+  geom_line(aes(color=city)) +
+  geom_point(size=2) +
+  geom_hline(data=mean,aes(yintercept=mean_val,color=city,linetype="average demand"))+ #cite 1
+  theme_minimal() +
+    labs(
+    x = 'Period (hour)',
+    y = 'Power demand',
+    colour = 'city'
+  ) 
+
+```
+
+***
+
+Here we show a different plot.
+
+### Electricity supply and consumption change over time in three cities (Hour) partII
+```{r echo=FALSE, fig.height=6, fig.width=10, warning=FALSE}
+
+
+capa_data_hour <- capa_data %>%
+  group_by(delivery_date,month_year,hours) %>%
+  summarise(capacity=sum(volumn))
+
+
+capa_hour <- capa_data_hour %>% select(hours,capacity) %>%
+  group_by(hours) %>%
+  summarise(mean_val=mean(capacity)) %>%
+  mutate(hour=as.numeric(gsub(".*?([0-9]+).*", "\\1", hours)))
+
+mean_capa <- capa_hour%>% select(mean_val) %>%
+  summarise(mean_capa=mean(mean_val))
+
+capa_hour %>% 
+  ggplot(aes( x = reorder(hours,hour),y = mean_val))+
+  geom_line(aes(group=1,colour="Output"))+
+  geom_point()+
+  geom_hline(data=mean_capa,aes(yintercept=mean_capa,color = "average output"))+ #cite 1
+  scale_color_manual(values = c("blue",capa_color))+
+  geom_point(color=capa_color) +
+  theme_minimal() +
+    labs(
+    x = 'Period (hour)',
+    y = 'Power Output'
+  ) +
+  theme(axis.text.x = element_text(angle=90,hjust=0.5, vjust=0.5))
+
+
+```
+
+***
+
+### Electricity supply and consumption change over time in three cities (Hour) partIII
+```{r echo=FALSE, fig.height=6, fig.width=12, warning=FALSE}
+demand_hour2 <- demand_hour %>%
+select (Hour,demand,hours) %>%
+  group_by(hours,Hour) %>%
+  summarise(mean_val=sum(demand))
+df2 <- demand_hour2 %>% left_join(capa_hour,by = c("Hour" = "hour")) %>%
+  rename(demand=mean_val.x,capacity=mean_val.y,Time=hours.x)
+
+df2 %>% select(Time,Hour,demand,capacity) %>%
+ggplot(aes( x = reorder(Time,Hour)))+
+  geom_line(aes(y=demand,group=1,color="demand"))+
+  geom_line(aes(y=capacity/2,group=1,color="output"))+
+  scale_y_continuous(
+    name="demand",
+    sec.axis = sec_axis(trans = ~.*2,name="output")
+  )+
+  labs(x="Period(hour)") +
+  scale_color_manual(values = c("darkgreen", "coral3")) +
+  theme(axis.text.x = element_text(angle=0,hjust=0.5, vjust=0.5),
+        axis.title.y = element_text(color = "darkgreen"),
+    axis.title.y.right = element_text(color = "coral3")
+  )
+
+```
+
+***
+
+### Electricity supply and consumption change over time in three cities (Hour) partIV
+
+```{r, warning = FALSE, message = FALSE, fig.height=6,fig.width=10}
+
+df2 %>% select(Time,Hour,demand,capacity) %>%
+ggplot(aes(x=demand,y=capacity,size=demand/capacity,color=Hour),alpha=0.8) +
+  geom_point() +
+  stat_smooth() +
+  scale_size_continuous(range = c(2, 10))
+
+```
+
+***
+
+### Changes in Electricity Rates Over Time (year)
+
+```{r, warning = FALSE, message = FALSE, fig.height=6,fig.width=10}
+
+getPrice <- function(filename){
+  temp <- read_csv(filename,skip = 3, col_names = TRUE,show_col_types = FALSE) %>%
+  clean_names() %>%
+  select(date,hour,hoep)
+  return(temp)
+}
+
+price_data <- tibble()
+for (i in 2019:2023)
+{
+filename = paste("PUB_PriceHOEPPredispOR_",i,".csv",sep = "")
+price_data <- price_data %>% bind_rows(getPrice(filename)) %>%
+  mutate(month_year = format(as.Date(date), "%Y-%m"))
+}
+
+price_month <- price_data %>%
+  select(month_year,hoep) %>%
+  group_by(month_year) %>%
+  summarise(price = mean(hoep))
+
+price_month %>% 
+  ggplot(aes( x = month_year, y = price))+
+  geom_line(aes(size=2),group=1,color="darkgreen") +
+  theme_minimal() +
+    labs(
+    x = 'Period (year)',
+    y = 'price($ CAD per MWh)'
+  ) +
+  theme(axis.text.x = element_text(angle=90,hjust=0.5, vjust=0.5))
+```
+
+***
+
+Negative (or at least very cheap) HOEP pricing occurs when the province is experiencing periods of low demand at the same time that there is an excess of “baseload” generation online.(https://www.greenhousecanada.com/electricity-rate-price-shock-in-ontario-this-month-20209/)
+
+### Changes in Electricity Rates Over Time (hour) partI
+
+```{r, warning = FALSE, message = FALSE, fig.height=6,fig.width=10}
+
+price_hour <- price_data %>%
+  select(hour,hoep) %>%
+  group_by(hour) %>%
+  summarise(price_val=mean(hoep)) %>%
+  mutate(hours=as.character(hour))
+
+price_hour %>% 
+  ggplot(aes( x = reorder(hours,hour), y = price_val))+
+  geom_line(aes(size=2),group=1,color="darkgreen") +
+  theme_minimal() +
+    labs(
+    x = 'Period (hour)',
+    y = 'price($ CAD per MWh)'
+  ) +
+  theme(axis.text.x = element_text(angle=90,hjust=0.5, vjust=0.5))
+
+```
+
+***
+
+Even more plots.
+
+### Changes in Electricity Rates Over Time (hour) partII
+
+```{r, warning = FALSE, message = FALSE, fig.height=6,fig.width=10}
+
+df3 <- demand_hour2 %>%
+  left_join(price_hour,by=c("hours"="hours")) %>%
+  select(-hour)
+
+df3 %>%
+  ggplot(aes(x=mean_val,y=price_val,size=price_val,color=Hour),alpha=0.8) +
+  geom_point() +
+  stat_smooth(method = glm,level=0.99) +
+  scale_size_continuous(range = c(2, 10))
+```
+
+***
+
+method:glm, level:0.99 
+
+### Temperature changes over time in three cities (year)
+
+```{r, warning = FALSE, message = FALSE, fig.height=6,fig.width=10}
+temp_data <- tibble()
+temp_hour<- tibble()
+cities <- c("6139449","6105978","6158355")
+  
+months <- c("01","02","03","04","05","06","07","08","09","10","11","12")
+for(i in cities)
+{
+for (j in 2019:2023)
+{
+  for(k in months)
+{
+filename = paste("city_temp/en_climate_hourly_ON_",i,"_",k,"-",j,"_P1H.csv",sep = "")
+if (file.exists(filename))
+{
+  temp <-read_csv(filename,col_names = TRUE,show_col_types = FALSE) %>%
+  clean_names()%>%select(station_name,temp_c,date_time_lst,day,time_lst) %>%
+  mutate(hour=as.numeric(gsub(".*?([0-9]+).*", "\\1",time_lst)))%>%select(-time_lst)%>%mutate(month_year = format(as.Date(date_time_lst), "%Y-%m"))
+  
+  temp_data <- temp_data %>% bind_rows(temp)
+
+}
+}
+  
+}
+ 
+}
+
+
+temp_data<-temp_data%>%pivot_wider(names_from = station_name, values_from = temp_c)%>%clean_names()%>%setnames(old = c('welland_pelham','ottawa_cda_rcs','toronto_city'),new = c('Niagara','Ottawa','Toronto'))
+
+
+temp_hour <- temp_data %>%select (hour,Niagara,Ottawa,Toronto) %>% pivot_longer(-hour,names_to = "city",values_to = "temp") %>%drop_na() %>% group_by(hour,city) %>%summarise(mean_temp_hour=mean(temp))#%>%pivot_wider(names_from = city, values_from = mean_temp)
+
+view(temp_data)
+ggplot(temp_hour, mapping = aes(x = hour, y = mean_temp_hour, color = city) ) + geom_line()+ labs(
+    x = 'Period (Hours)',
+    y = 'Temperature'
+  )
+
+```
+
+***
+
+Even more plots.
+
+### Temperature changes over time in three cities (hour)
+
+```{r, warning = FALSE, message = FALSE, fig.height=6,fig.width=10}
+
+```
+
+***
+
+Even more plots.
+
+### Electricity supply and consumption change over temperature in three cities
+
+```{r, warning = FALSE, message = FALSE, fig.height=6,fig.width=10}
+
+temp_hour <- temp_data %>% pivot_longer(cols = c('niagara', 'ottawa', 'toronto'), names_to = 'city', values_to = 'temp') %>% select(month_year, city, temp)%>% drop_na()%>% group_by(city, month_year) %>% summarise(mean_temp = mean(temp))
+
+demand_temp <- left_join(demand_month,temp_hour,by = c("city"="city","Time"="month_year"))
+
+demand_temp %>% 
+  ggplot(aes( x = mean_temp,y = demand, colour = city,group=city))+
+  geom_line(aes(color=city)) +
+  geom_point(size=2) +
+  theme_minimal() +
+    labs(
+    x = 'Temp (C)',
+    y = 'Power demand',
+    colour = 'city'
+  ) 
+
+```
+
+***
+
+Even more plots.
+
+### Electricity supply and consumption change over rates in three cities
+
+```{r, warning = FALSE, message = FALSE, fig.height=6,fig.width=10}
+
+```
+
+***
+
+Even more plots.
+
+
+

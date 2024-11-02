@@ -1,0 +1,221 @@
+---
+title: "Assignment 6"
+subtitle: '2018 Ottawa election fraud investigation report'
+author: "Yangyijun Gao & 300262073"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    code_folding: hide
+    toc: true
+    toc_float: true
+---
+
+# Part I
+
+# Description
+
+In the 2018 election in Ottawa, investigate whether there was fraud.
+
+# There might be fraud in the 2018 Ottawa Municipal election
+
+## 1. Overall analysis of voter counts and vote counts
+
+```{r, warning = FALSE, message = FALSE, fig.height=6,fig.width=10}
+
+# load libraries
+library(dplyr)
+library(readxl)
+library(janitor)
+library(ggplot2)
+library(knitr)
+library(ggrepel)
+library(stringr)
+library(tidyr)
+library(readr)
+library(scales)
+library(patchwork)
+library(tibble)
+library(tictoc)
+library(lubridate)
+library(benford.analysis)
+
+
+# determine the fraction of eligible voters who actually voted in each ward
+df_v <- read_excel("statementofvotescastoctober242018.xls",sheet = 1,skip=2) %>%
+  clean_names() %>%
+  remove_empty(which="cols") %>%
+  filter(precinct != "City / Ville", precinct !="City / Ville - Total", precinct != "Ottawa",!str_detect(precinct, "^Spc"),!str_detect(precinct, "^Adv")) %>%
+  filter(registered_voters<cards_cast)
+
+df_v %>% 
+  pivot_longer(
+    -precinct,
+    names_to = "voter_stats", 
+    values_to = "votes"
+    ) %>% 
+  ggplot(aes(x=precinct, y=votes,fill=voter_stats))+
+  geom_bar(stat="identity",position=position_dodge(0.7),width=0.6) + #set column dodge
+  scale_x_discrete(drop = FALSE)+
+  theme(axis.text.x = element_text(angle=90, hjust=1, vjust=.5))+
+    labs(
+    x = 'precincts',
+    y = 'registered vs. cast votes',
+    fill = 'registered vs. cast votes'
+  )
+```
+First, let’s take a look at the voting data as a whole. To simplify, we exclude Adv and Spc precincts because these precincts have very few votes, so we don’t think it will affect the results.
+
+In the graph we filter out all precincts where fewer registered voters than actual votes were cast.It can be seen that some of these precincts have no registered voters but have votes, and some have fewer registered voters than votes.
+
+In either case it's not common sense，So we think there's a problem with the ballots in those precincts, maybe there's fraud involved.
+
+
+# 2. Next, let's see if the number of registrations and the number of votes comply with Benford's law
+
+## 2.1 The first is whether registered voters comply with Benford's Law
+```{r, warning = FALSE, message = FALSE, fig.height=6,fig.width=8}
+df_v <- read_excel("statementofvotescastoctober242018.xls",sheet = 1,skip=2) %>%
+  clean_names() %>%
+  remove_empty(which="cols") %>%
+  filter(precinct != "City / Ville", precinct !="City / Ville - Total", precinct != "Ottawa",!str_detect(precinct, "^Spc"),!str_detect(precinct, "^Adv")) %>%
+  filter(registered_voters!=0)
+benford1 <-benford(df_v$registered_voters,number.of.digits = 1)
+plot(benford1)
+benford1$stats$mantissa.arc.test$p.value
+```
+
+Shown above is Benford's analysis of registered voters in all precincts exclude Spc and Adv.
+
+We can see that the overall does not follow Benford's law, the peak appears at the number 2 instead of 1.
+
+The null hypothesis here is that the registered voters follows Benford's law. 
+
+Our query finds that the p-value is very small(<0.01)，So we can deny the null hypothesis, the observation of the first number of registered voters does not strictly conform to the benford distribution.
+
+## 2.2 Next is whether the actual number of cast votes comply with Benford's Law
+
+```{r, warning = FALSE, message = FALSE, fig.height=6,fig.width=8}
+df_v <- read_excel("statementofvotescastoctober242018.xls",sheet = 1,skip=2) %>%
+  clean_names() %>%
+  remove_empty(which="cols") %>%
+  filter(precinct != "City / Ville", precinct !="City / Ville - Total", precinct != "Ottawa",!str_detect(precinct, "^Spc"),!str_detect(precinct, "^Adv")) %>%
+  filter(cards_cast!=0)
+benford2 <-benford(df_v$cards_cast,number.of.digits = 1)
+plot(benford2)
+benford2$stats$mantissa.arc.test$p.value
+```
+Shown above is Benford's analysis of cast votes in all precincts exclude Spc and Adv.
+
+We can see that the overall does not follow Benford's law, the peak appears at the number 1 but the trend of numbers 2 to 9 is almost flat
+
+The null hypothesis here is that the cast votes follows Benford's law. 
+
+Our query finds that the p-value is very small(<0.01)，So we can deny the null hypothesis, the observation of the first number of cast votes does not strictly conform to the benford distribution.
+
+Based on the above, we found that the number of voters and the number of votes do not conform to Benford's law, so we can guess that there may be fraud in this election.
+
+# 3. Conclusion
+
+From the fact that the number of voters was less than the number of votes cast and that the number of voters and the number of votes cast did not comply with Benford's law, we can conclude that the 2018 Ottawa election may have been fraudulent.
+
+# Comments
+
+- Adv and Spc precincts are excluded
+
+# Suggestions for further explorations
+
+- You can check whether the vote counts of the election winners in each wards comply with Benford's Law
+
+# Part 2
+
+You are going on a vacation, and you hate arriving late. So you
+checkout the on-time arrival info of two airlines: American and Delta;
+and then you look at two possible destinations: New York City and
+Chicago.
+
+```{r}
+df_chi <- tribble(
+  ~airline, ~ontime, ~qty,~dest,
+  'delta',TRUE,527,'CHI',
+  'delta',FALSE,92,'CHI',
+  'american',TRUE,4229,'CHI',
+  'american',FALSE,825,'CHI'
+)
+
+df_nyc <- tribble(
+  ~airline, ~ontime, ~qty,~dest,
+  'delta',TRUE,1817,'NYC',
+  'delta',FALSE,567,'NYC',
+  'american',TRUE,1651,'NYC',
+  'american',FALSE,625,'NYC'
+)
+```
+
+*If you were going to Chicago, and all you cared about was getting there
+on time, which airline would you fly?*
+
+```{r}
+df_chi %>% pivot_wider(names_from = 'ontime',values_from = 'qty') %>%
+  clean_names() %>%
+  mutate(ontime_rate = true/(true+false),flights=true+false)
+
+
+```
+ANSWER: I will choose American airlines. The punctuality rate of delta is 85.1% and american is 83.7%. They are very close but american has 8 times as many flights as delta, this can make it more flexible for me to buy flights, and it will be more convenient to change tickets.
+
+*If you were going to New York City, and all you cared about was getting
+there on time, which airline would you fly?*
+
+```{r}
+df_nyc %>% pivot_wider(names_from = 'ontime',values_from = 'qty') %>%
+  clean_names() %>%
+  mutate(ontime_rate = true/(true+false),flights=true+false)
+
+
+```
+
+ANSWER: I will choose delta airline because Delta has more flights and better on-time performance.
+
+```{r}
+df_all <- bind_rows(df_chi,df_nyc)
+```
+
+*If you were going to take a vacation and all you cared about was
+getting there on time, (you don't care about the destination at all -
+just the airline) based on this data, which airline would you fly?*
+
+```{r}
+df_all %>% select(-dest) %>%
+  pivot_wider(names_from = 'ontime',values_from = 'qty',values_fn = sum) %>% #cite 1
+ clean_names() %>%
+  mutate(ontime_rate = true/(true+false))
+
+df_all
+df_all %>% 
+  pivot_wider(names_from = 'ontime',values_from = 'qty',values_fn = sum) #cite 1
+```
+
+ANSWER:  I will choose american airline because it has better on-time performance.
+
+# Appendices
+
+<details>
+
+<summary>References</summary>
+
+
+1. https://community.rstudio.com/t/what-is-the-best-way-to-pivot-wider-and-summarise-at-the-same-time/71914
+
+
+</details>
+
+<details>
+
+<summary>SessionInfo</summary>
+
+```{r}
+sessionInfo()
+```
+
+</details>
+
